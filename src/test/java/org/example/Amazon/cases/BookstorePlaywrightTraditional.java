@@ -13,10 +13,7 @@ import static org.junit.jupiter.api.Assertions.*;
  * Product: JBL Quantum True Wireless Noise Cancelling Gaming Earbuds - Black
  * SKU: 668972707 | Price: $164.98 | Handling: $3.00 | Est. Total: $167.98
  *
- * Filter structure (confirmed from real HTML):
- *   - Checkboxes are sr-only (hidden) — MUST click span.facet__list__label instead
- *   - Facet panels: #facet-brand, #facet-Color, #facet-price
- *   - Product link: a[href*="668972707"]
+ * Runs headed locally, headless on CI (detects CI env variable).
  */
 @TestMethodOrder(MethodOrderer.OrderAnnotation.class)
 public class BookstorePlaywrightTraditional {
@@ -27,7 +24,9 @@ public class BookstorePlaywrightTraditional {
     static Page page;
 
     static final String BASE_URL    = "https://depaul.bncollege.com/";
-    static final String PRODUCT_URL = "https://depaul.bncollege.com/JBL/JBL-Quantum-True-Wireless-Noise-Cancelling-Gaming-Earbuds--Black/p/668972707";
+    static final String PRODUCT_URL =
+        "https://depaul.bncollege.com/JBL/JBL-Quantum-True-Wireless-"
+        + "Noise-Cancelling-Gaming-Earbuds--Black/p/668972707";
     static final String CART_URL    = "https://depaul.bncollege.com/cart";
 
     static final String SKU             = "668972707";
@@ -41,18 +40,28 @@ public class BookstorePlaywrightTraditional {
     static final String EMAIL      = "hamza.patal@test.com";
     static final String PHONE      = "3125550000";
 
-    static void log(String msg) { System.out.println("[PLAYWRIGHT] " + msg); }
+    static void log(String msg) {
+        System.out.println("[PLAYWRIGHT] " + msg);
+    }
 
     static void waitForPage() {
-        try { page.waitForLoadState(LoadState.DOMCONTENTLOADED); }
-        catch (Exception e) { log("  ! DOM timeout"); }
-        try { page.waitForLoadState(LoadState.NETWORKIDLE,
-            new Page.WaitForLoadStateOptions().setTimeout(12000)); }
-        catch (Exception e) { log("  ! Network idle timeout (ok)"); }
+        try {
+            page.waitForLoadState(LoadState.DOMCONTENTLOADED);
+        } catch (Exception e) {
+            log("  ! DOM timeout");
+        }
+        try {
+            page.waitForLoadState(LoadState.NETWORKIDLE,
+                new Page.WaitForLoadStateOptions().setTimeout(12000));
+        } catch (Exception e) {
+            log("  ! Network idle timeout (ok)");
+        }
     }
 
     static void logPage() {
-        try { log("  URL: " + page.url()); } catch (Exception ignored) {}
+        try {
+            log("  URL: " + page.url());
+        } catch (Exception ignored) { }
     }
 
     static boolean safeClick(String... selectors) {
@@ -92,42 +101,36 @@ public class BookstorePlaywrightTraditional {
     }
 
     /**
-     * Apply a filter by clicking the LABEL (span.facet__list__label) of the checkbox.
-     * The checkbox itself is sr-only (hidden) so we must click its sibling label.
-     * Structure: label > input[type=checkbox][alt="VALUE"] + span.facet__list__label
-     *
-     * The facet panel must already be visible (collapse in = open).
-     * If it's closed, click the facet__name header first.
+     * Apply a search filter by clicking the visible span.facet__list__label.
+     * The checkbox is sr-only (hidden), so clicking the label triggers the form.
+     * Panels confirmed always-open (collapse in) on search results page.
      */
     static void applyFilter(String facetId, String altValue) {
         log("  Applying filter [" + facetId + "] = " + altValue);
         try {
-            // Ensure facet panel is open (class "collapse in" means open)
             Locator panel = page.locator(facetId).first();
             panel.waitFor(new Locator.WaitForOptions().setTimeout(5000));
             String cls = panel.getAttribute("class");
             if (cls == null || !cls.contains("in")) {
-                log("  Panel closed, clicking header to expand");
+                log("  Panel closed, opening...");
                 Locator header = page.locator(
                     "div.facet__name[data-target='" + facetId + "']").first();
                 header.click();
                 page.waitForTimeout(600);
             }
-
-            // Click the LABEL (span.facet__list__label) — parent of checkbox is <label>,
-            // and the visible span is span.facet__list__label inside it.
-            // Selector: find checkbox by alt, then click the span.facet__list__label in same label
-            String selector = facetId +
-                " input.facet__list__checkbox[alt='" + altValue + "']" +
-                " ~ span.facet__list__label";
-            Locator label = page.locator(selector).first();
+            // Click visible label span (sibling of the sr-only checkbox)
+            String sel = facetId
+                + " input.facet__list__checkbox[alt='" + altValue + "']"
+                + " ~ span.facet__list__label";
+            Locator label = page.locator(sel).first();
             label.waitFor(new Locator.WaitForOptions().setTimeout(5000));
-            log("  + Clicking label for: " + altValue);
+            log("  + Clicking label: " + altValue);
             label.click();
             page.waitForTimeout(400);
             log("  + Filter applied: " + altValue);
         } catch (Exception e) {
-            log("  ! Filter error for " + altValue + ": " + e.getMessage().split("\n")[0]);
+            log("  ! Filter error for " + altValue + ": "
+                + e.getMessage().split("\n")[0]);
         }
     }
 
@@ -136,8 +139,14 @@ public class BookstorePlaywrightTraditional {
     static void setup() {
         log("=== SETUP ===");
         playwright = Playwright.create();
+        // Headless on CI (GitHub Actions sets CI=true), headed locally
+        boolean isCI = System.getenv("CI") != null;
+        int slowMo = isCI ? 0 : 400;
+        log("  headless=" + isCI + "  slowMo=" + slowMo);
         browser = playwright.chromium().launch(
-            new BrowserType.LaunchOptions().setHeadless(false).setSlowMo(400)
+            new BrowserType.LaunchOptions()
+                .setHeadless(isCI)
+                .setSlowMo(slowMo)
         );
         context = browser.newContext(new Browser.NewContextOptions()
             .setViewportSize(1280, 720)
@@ -151,19 +160,20 @@ public class BookstorePlaywrightTraditional {
     @AfterAll
     static void teardown() {
         log("=== TEARDOWN: saving video ===");
-        try { context.close(); } catch (Exception ignored) {}
-        try { browser.close(); } catch (Exception ignored) {}
-        try { playwright.close(); } catch (Exception ignored) {}
+        try { context.close(); } catch (Exception ignored) { }
+        try { browser.close(); } catch (Exception ignored) { }
+        try { playwright.close(); } catch (Exception ignored) { }
         log("=== DONE. Video saved in videos/ ===");
     }
 
     // -----------------------------------------------------------------------
-    // TC1: Homepage → Search → Filters → Product → Add to Cart
+    // TC1: Homepage -> Search -> Filters -> Product -> Add to Cart
     // -----------------------------------------------------------------------
     @Test
     @Order(1)
-    @DisplayName("TC1: Search earbuds, apply Brand/Color/Price filters, assert product details, add to cart")
-    void testCase1_SearchAndAddToCart() {
+    @DisplayName("TC1: Search earbuds, apply Brand/Color/Price filters, "
+        + "assert product details, add to cart")
+    void testCase1SearchAndAddToCart() {
         log("\n===== TC1: SEARCH + FILTERS + PRODUCT =====");
 
         log("Step 1: Navigate to homepage");
@@ -182,7 +192,6 @@ public class BookstorePlaywrightTraditional {
         page.waitForTimeout(2000);
         logPage();
 
-        // Step 3-5: Apply filters using the label click approach
         log("Step 3: Apply Brand = JBL");
         applyFilter("#facet-brand", "JBL");
         waitForPage();
@@ -199,8 +208,6 @@ public class BookstorePlaywrightTraditional {
         page.waitForTimeout(2000);
         logPage();
 
-        // Step 6: Click the JBL Quantum product
-        // Confirmed from real HTML: href="/JBL/JBL-Quantum.../p/668972707?currentCampus=85"
         log("Step 6: Click JBL Quantum True Wireless product");
         page.waitForTimeout(1500);
         boolean clicked = safeClick(
@@ -210,33 +217,27 @@ public class BookstorePlaywrightTraditional {
             "a:has-text('JBL Quantum True Wireless')"
         );
         if (!clicked) {
-            log("  ! Product not found, navigating directly to product URL");
+            log("  ! Product not found, navigating directly");
             page.navigate(PRODUCT_URL);
         }
         waitForPage();
         logPage();
 
-        // Step 7: Assert product details
         log("Step 7: Assert product name, SKU, price, description");
         String content = page.content();
-
         assertTrue(content.contains("JBL") || content.contains("Quantum"),
             "Product name should be on page");
         log("  + Product name: OK");
-
         assertTrue(content.contains(SKU), "SKU " + SKU + " should be on page");
         log("  + SKU: OK");
-
         assertTrue(content.contains(PRODUCT_PRICE), "Price $" + PRODUCT_PRICE);
         log("  + Price $" + PRODUCT_PRICE + ": OK");
-
-        assertTrue(content.toLowerCase().contains("noise") ||
-            content.toLowerCase().contains("wireless") ||
-            content.toLowerCase().contains("gaming"),
+        assertTrue(content.toLowerCase().contains("noise")
+            || content.toLowerCase().contains("wireless")
+            || content.toLowerCase().contains("gaming"),
             "Description should mention noise/wireless/gaming");
         log("  + Description: OK");
 
-        // Step 8: Add to Cart
         log("Step 8: Click Add to Cart");
         boolean added = safeClick(
             "button:has-text('Add to Cart')",
@@ -251,9 +252,8 @@ public class BookstorePlaywrightTraditional {
 
         log("Step 10: Assert cart shows 1 item");
         String afterAdd = page.content();
-        boolean cartOk =
-            afterAdd.contains("1 item") || afterAdd.contains("1 Item") ||
-            afterAdd.contains("(1)") || afterAdd.contains("Cart 1");
+        boolean cartOk = afterAdd.contains("1 item") || afterAdd.contains("1 Item")
+            || afterAdd.contains("(1)") || afterAdd.contains("Cart 1");
         assertTrue(cartOk, "Cart should show 1 item");
         log("  + Cart shows 1 item: OK");
         log("===== TC1 PASSED =====\n");
@@ -264,8 +264,9 @@ public class BookstorePlaywrightTraditional {
     // -----------------------------------------------------------------------
     @Test
     @Order(2)
-    @DisplayName("TC2: Cart - product/qty/price, in-store pickup, sidebar totals, promo code, checkout")
-    void testCase2_ShoppingCart() {
+    @DisplayName("TC2: Cart - product/qty/price, in-store pickup, "
+        + "sidebar totals, promo code, checkout")
+    void testCase2ShoppingCart() {
         log("\n===== TC2: SHOPPING CART =====");
 
         log("Step 1: Navigate to cart");
@@ -279,34 +280,25 @@ public class BookstorePlaywrightTraditional {
         log("  + Cart page: OK");
 
         log("Step 3a: Assert product name JBL Quantum");
-        assertTrue(content.contains("JBL Quantum") || content.contains("JBL"), "Product in cart");
+        assertTrue(content.contains("JBL Quantum") || content.contains("JBL"),
+            "Product in cart");
         log("  + Product name: OK");
 
         log("Step 3b: Assert quantity = 1");
-        assertTrue(content.contains("1 Item") || content.contains("Qty") || content.contains("1"), "Qty visible");
+        assertTrue(content.contains("1 Item") || content.contains("Qty")
+            || content.contains("1"), "Qty visible");
         log("  + Quantity: OK");
 
         log("Step 3c: Assert price $" + PRODUCT_PRICE);
         assertTrue(content.contains(PRODUCT_PRICE), "Price in cart");
         log("  + Price: OK");
 
-        // Select FAST In-Store Pickup
-        // From real HTML: input[value='pickup'] inside a label
-        // Need to click the label (visible part), not the hidden radio
         log("Step 4: Select FAST In-Store Pickup");
         page.waitForTimeout(1000);
         safeClick(
             "label:has-text('FAST In-Store Pickup')",
             "label:has-text('In-Store Pickup')"
         );
-        if (!safeClick("label:has-text('FAST In-Store Pickup')", "label:has-text('In-Store Pickup')")) {
-            // Try clicking by form radio value
-            try {
-                Locator radio = page.locator("input[value='pickup']").first();
-                radio.evaluate("el => el.click()");
-                log("  + Pickup selected via JS click");
-            } catch (Exception e) { log("  ! Pickup radio click failed: " + e.getMessage()); }
-        }
         page.waitForTimeout(2000);
 
         log("Step 5: Assert sidebar totals");
@@ -337,10 +329,10 @@ public class BookstorePlaywrightTraditional {
         log("Step 7: Assert promo code rejection");
         String afterPromo = page.content().toLowerCase();
         assertTrue(
-            afterPromo.contains("invalid") || afterPromo.contains("not valid") ||
-            afterPromo.contains("not found") || afterPromo.contains("error") ||
-            afterPromo.contains("could not") || afterPromo.contains("promo") ||
-            afterPromo.contains("coupon"),
+            afterPromo.contains("invalid") || afterPromo.contains("not valid")
+                || afterPromo.contains("not found") || afterPromo.contains("error")
+                || afterPromo.contains("could not") || afterPromo.contains("promo")
+                || afterPromo.contains("coupon"),
             "Promo rejection message expected");
         log("  + Promo rejected: OK");
 
@@ -363,18 +355,17 @@ public class BookstorePlaywrightTraditional {
     @Test
     @Order(3)
     @DisplayName("TC3: Create Account - assert label, click Proceed As Guest")
-    void testCase3_CreateAccount() {
+    void testCase3CreateAccount() {
         log("\n===== TC3: CREATE ACCOUNT =====");
         logPage();
         String content = page.content();
 
         log("Step 1: Assert Create Account label");
-        assertTrue(content.contains("Create Account") || content.contains("Sign In") ||
-            content.contains("Log In"), "Create Account label should be present");
+        assertTrue(content.contains("Create Account") || content.contains("Sign In")
+            || content.contains("Log In"), "Create Account label should be present");
         log("  + Create Account label: OK");
 
         log("Step 2: Click Proceed As Guest");
-        // Confirmed exact selector from real HTML: a.guestCheckoutBtn
         boolean clicked = safeClick(
             "a.guestCheckoutBtn",
             "a:has-text('Proceed As Guest')",
@@ -393,18 +384,18 @@ public class BookstorePlaywrightTraditional {
     @Test
     @Order(4)
     @DisplayName("TC4: Contact Information - fill name/email/phone, assert sidebar totals")
-    void testCase4_ContactInformation() {
+    void testCase4ContactInformation() {
         log("\n===== TC4: CONTACT INFORMATION =====");
         logPage();
         String content = page.content();
 
         log("Step 1: Assert Contact Information page");
-        assertTrue(content.contains("Contact Information") ||
-            content.contains("Shipping and Pick Up") || content.contains("First Name"),
+        assertTrue(content.contains("Contact Information")
+            || content.contains("Shipping and Pick Up")
+            || content.contains("First Name"),
             "Should be on Contact Info page. URL: " + page.url());
         log("  + On Contact Info page: OK");
 
-        // Confirmed exact IDs from real HTML
         log("Step 2: Fill First Name = " + FIRST_NAME);
         safeFill(FIRST_NAME,
             "#contactInfo\\.firstName",
@@ -461,8 +452,9 @@ public class BookstorePlaywrightTraditional {
     // -----------------------------------------------------------------------
     @Test
     @Order(5)
-    @DisplayName("TC5: Pickup Information - assert contact info, DePaul location, sidebar totals")
-    void testCase5_PickupInformation() {
+    @DisplayName("TC5: Pickup Information - assert contact info, DePaul location, "
+        + "sidebar totals")
+    void testCase5PickupInformation() {
         log("\n===== TC5: PICKUP INFORMATION =====");
         logPage();
         String content = page.content();
@@ -475,14 +467,15 @@ public class BookstorePlaywrightTraditional {
         log("  + Email: OK");
 
         log("Step 2: Assert DePaul pickup location");
-        assertTrue(content.contains("DePaul") || content.contains("Loop") || content.contains("SAIC"),
-            "DePaul location should show");
+        assertTrue(content.contains("DePaul") || content.contains("Loop")
+            || content.contains("SAIC"), "DePaul location should show");
         log("  + DePaul location: OK");
 
         log("Step 3: Assert pickup person option");
-        assertTrue(content.contains("I'll pick them up") || content.contains("pick them up") ||
-            content.contains("Pick Up") || content.contains("PICKUP") || content.contains("Pickup"),
-            "Pickup person option should show");
+        assertTrue(content.contains("I'll pick them up")
+            || content.contains("pick them up")
+            || content.contains("Pick Up") || content.contains("PICKUP")
+            || content.contains("Pickup"), "Pickup person option should show");
         log("  + Pickup person: OK");
 
         log("Step 4: Assert sidebar totals");
@@ -519,7 +512,7 @@ public class BookstorePlaywrightTraditional {
     @Test
     @Order(6)
     @DisplayName("TC6: Payment - assert final totals with real tax, click Back to Cart")
-    void testCase6_PaymentInformation() {
+    void testCase6PaymentInformation() {
         log("\n===== TC6: PAYMENT INFORMATION =====");
         logPage();
         String content = page.content();
@@ -529,13 +522,11 @@ public class BookstorePlaywrightTraditional {
         log("  + Subtotal: OK");
         assertTrue(content.contains(HANDLING), "Handling $" + HANDLING);
         log("  + Handling: OK");
-        // Tax is now calculated, no longer TBD
-        assertTrue(
-            content.contains("15.") || content.contains("16.") || content.contains("17."),
-            "Tax should be calculated (around $15-17)");
+        assertTrue(content.contains("15.") || content.contains("16.")
+            || content.contains("17."), "Tax should be calculated");
         log("  + Tax calculated: OK");
-        assertTrue(content.contains("18") || content.contains("167") || content.contains("168"),
-            "Final total should be calculated");
+        assertTrue(content.contains("18") || content.contains("167")
+            || content.contains("168"), "Final total should be calculated");
         log("  + Final total: OK");
 
         log("Step 2: Assert item still visible");
@@ -564,7 +555,7 @@ public class BookstorePlaywrightTraditional {
     @Test
     @Order(7)
     @DisplayName("TC7: Delete product from cart, assert cart is empty, close window")
-    void testCase7_DeleteFromCart() {
+    void testCase7DeleteFromCart() {
         log("\n===== TC7: DELETE FROM CART =====");
 
         page.navigate(CART_URL);
@@ -573,11 +564,10 @@ public class BookstorePlaywrightTraditional {
 
         log("Step 1: Assert on cart page");
         String content = page.content();
-        assertTrue(content.contains("Your Shopping Cart") || content.contains("Shopping Cart"),
-            "Should be on cart page");
+        assertTrue(content.contains("Your Shopping Cart")
+            || content.contains("Shopping Cart"), "Should be on cart page");
         log("  + On cart page: OK");
 
-        // Confirmed from run #9: aria-label='Remove product JBL Quantum...'
         log("Step 2: Click Remove button");
         boolean removed = safeClick(
             "[aria-label*='Remove product JBL' i]",
@@ -598,19 +588,23 @@ public class BookstorePlaywrightTraditional {
                     try {
                         String aria = all.nth(i).getAttribute("aria-label");
                         String txt = all.nth(i).innerText().toLowerCase().trim();
-                        if (aria == null) aria = "";
-                        if (aria.toLowerCase().contains("remove") ||
-                            txt.equals("remove") || txt.equals("delete")) {
-                            log("  FOUND: aria='" +
-                                aria.substring(0, Math.min(aria.length(), 50)) +
-                                "' text='" + txt + "'");
+                        if (aria == null) {
+                            aria = "";
+                        }
+                        if (aria.toLowerCase().contains("remove")
+                            || txt.equals("remove") || txt.equals("delete")) {
+                            log("  FOUND: aria='"
+                                + aria.substring(0, Math.min(aria.length(), 50))
+                                + "' text='" + txt + "'");
                             all.nth(i).click();
                             removed = true;
                             break;
                         }
-                    } catch (Exception ignored) {}
+                    } catch (Exception ignored) { }
                 }
-            } catch (Exception e) { log("  ! Scan error: " + e.getMessage()); }
+            } catch (Exception e) {
+                log("  ! Scan error: " + e.getMessage());
+            }
         }
         assertTrue(removed, "Remove button should be clicked. URL: " + page.url());
         log("  + Remove clicked: OK");
@@ -622,11 +616,11 @@ public class BookstorePlaywrightTraditional {
         log("Step 4: Assert cart is empty");
         String afterDelete = page.content().toLowerCase();
         assertTrue(
-            afterDelete.contains("your cart is empty") ||
-            afterDelete.contains("cart is empty") ||
-            afterDelete.contains("no items") ||
-            afterDelete.contains("empty cart") ||
-            afterDelete.contains("0 item"),
+            afterDelete.contains("your cart is empty")
+                || afterDelete.contains("cart is empty")
+                || afterDelete.contains("no items")
+                || afterDelete.contains("empty cart")
+                || afterDelete.contains("0 item"),
             "Cart should be empty");
         log("  + Cart is empty: OK");
         log("=== ALL 7 TEST CASES COMPLETE. Video saved in videos/ ===");
