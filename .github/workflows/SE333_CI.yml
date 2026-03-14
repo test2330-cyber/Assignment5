@@ -28,11 +28,24 @@ jobs:
           name: checkstyle-report
           path: target/checkstyle-result.xml
 
-      - name: Run Tests with JaCoCo Coverage
-        run: mvn test
+      - name: Install Playwright Browsers
+        run: mvn exec:java -e -D exec.mainClass=com.microsoft.playwright.CLI -D exec.args="install --with-deps chromium" -D exec.classpathScope=test
+
+      - name: Run Unit and Integration Tests with JaCoCo
+        run: mvn test -Dtest="AmazonUnitTest,AmazonIntegrationTest"
+
+      - name: Run Playwright UI Tests (headless)
+        run: mvn test -Dtest=BookstorePlaywrightTraditional -Dsurefire.failIfNoSpecifiedTests=false
 
       - name: Upload JaCoCo Coverage Report
         uses: actions/upload-artifact@v4
         with:
           name: jacoco-report
           path: target/site/jacoco/jacoco.xml
+
+      - name: Upload Playwright Videos
+        uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: playwright-videos
+          path: videos/
